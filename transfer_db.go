@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"log"
 	"os"
@@ -38,6 +39,7 @@ func checkConnection(config DBConfig) error {
 
 // transferDatabase transfers the data from the source database to the target database
 func transferDatabase(sourceConfig, targetConfig DBConfig) error {
+	log.Printf("Starting pg_dump from source database: %s on host: %s", sourceConfig.DBName, sourceConfig.Host)
 	// Create the pg_dump command to export the source database
 	dumpCmd := exec.Command("pg_dump",
 		"-h", sourceConfig.Host,
@@ -68,6 +70,34 @@ func transferDatabase(sourceConfig, targetConfig DBConfig) error {
 		return fmt.Errorf("error creating pipe: %v", err)
 	}
 
+	// Capture the stderr output of pg_dump
+	dumpStderr, err := dumpCmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("error capturing stderr from pg_dump: %v", err)
+	}
+
+	// Capture the stderr output of pg_restore
+	restoreStderr, err := restoreCmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("error capturing stderr from pg_restore: %v", err)
+	}
+
+	// Log any errors from pg_dump
+	go func() {
+		scanner := bufio.NewScanner(dumpStderr)
+		for scanner.Scan() {
+			log.Printf("pg_dump: %s", scanner.Text())
+		}
+	}()
+
+	// Log any errors from pg_restore
+	go func() {
+		scanner := bufio.NewScanner(restoreStderr)
+		for scanner.Scan() {
+			log.Printf("pg_restore: %s", scanner.Text())
+		}
+	}()
+
 	// Start the pg_restore command before pg_dump to ensure it is ready to receive data
 	if err = restoreCmd.Start(); err != nil {
 		return fmt.Errorf("error starting pg_restore: %v", err)
@@ -81,11 +111,6 @@ func transferDatabase(sourceConfig, targetConfig DBConfig) error {
 	// Wait for pg_dump to finish
 	if err = dumpCmd.Wait(); err != nil {
 		return fmt.Errorf("error waiting for pg_dump: %v", err)
-	}
-
-	// Wait for pg_restore to finish
-	if err = restoreCmd.Wait(); err != nil {
-		return fmt.Errorf("error waiting for pg_restore: %v", err)
 	}
 
 	log.Println("Database successfully transferred")
@@ -138,6 +163,14 @@ func loadConfig() (DBConfig, DBConfig, error) {
 		User:     os.Getenv("TARGET_DB_USER"),
 		Password: os.Getenv("TARGET_DB_PASSWORD"),
 		DBName:   os.Getenv("TARGET_DB_NAME"),
+	}
+
+	if sourceConfig.Host == "" || sourceConfig.Port == "" || sourceConfig.User == "" || sourceConfig.Password == "" || sourceConfig.DBName == "" {
+		return DBConfig{}, DBConfig{}, fmt.Errorf("incomplete source database configuration")
+	}
+
+	if targetConfig.Host == "" || targetConfig.Port == "" || targetConfig.User == "" || targetConfig.Password == "" || targetConfig.DBName == "" {
+		return DBConfig{}, DBConfig{}, fmt.Errorf("incomplete target database configuration")
 	}
 
 	return sourceConfig, targetConfig, nil
