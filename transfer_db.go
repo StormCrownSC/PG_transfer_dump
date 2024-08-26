@@ -60,7 +60,8 @@ func transferDatabaseSchema(sourceConfig, targetConfig DBConfig) error {
 		"-p", targetConfig.Port,
 		"-U", targetConfig.User,
 		"-d", targetConfig.DBName,
-		"-v")
+		"-v",
+		"--clean")
 
 	// Set the environment variable for the target database password
 	restoreCmd.Env = append(os.Environ(), fmt.Sprintf("PGPASSWORD=%s", targetConfig.Password))
@@ -141,7 +142,8 @@ func transferDatabaseData(sourceConfig, targetConfig DBConfig) error {
 		"-p", targetConfig.Port,
 		"-U", targetConfig.User,
 		"-d", targetConfig.DBName,
-		"-v")
+		"-v",
+		"--clean")
 
 	// Set the environment variable for the target database password
 	restoreCmd.Env = append(os.Environ(), fmt.Sprintf("PGPASSWORD=%s", targetConfig.Password))
